@@ -75,147 +75,46 @@ GET /metrics — получение метрик в формате Prometheus.
    * Сделайте скриншоты дашборда или выгрузите логи, которые покажут, что количество реплик базы данных поменялось в ответ на сгенерированную нагрузку. Загрузите их в директорию Exc2 в рамках пул-реквеста.
 
 
-## Дополнительная часть задания: динамическая маршрутизация на основании показателей количества запросов в секунду
+## Решение
 
-🔍 Это задание выполнять необязательно. Если сдадите работу без него, это не отразится на ревью.
-
-Kubernetes предоставляет возможность управлять масштабированием на основании CPU и memory. Однако на реальных проектах зачастую требуется бóльшая гибкость для управления масштабированием. Для этого нужно использовать внешние метрики из системы мониторинга, которая может предоставить их в Kubernetes. Например, Prometheus.
-В нашем проекте нужно настроить динамическое масштабирование на основании количества запросов в секунду (RPS) на один под приложения.
-
-## Что нужно сделать
-
-* Установите Prometheus в вашем кластере. Рекомендуем установить Prometheus в Kubernetes с помощью Prometheus Operator через Helm. Лучше всего воспользоваться Prometheus Community Helm charts. Для этого используйте команды:
-
-```
-helm repo add prometheus-community <https://prometheus-community.github.io/helm-charts>
-helm repo update
-helm install prometheus-operator prometheus-community/kube-prometheus-stack
-```
-
-* Теперь необходимо обеспечить экспорт метрик из приложения в Prometheus. Для этого стоит воспользоваться Service Monitor. Он использует Prometheus Operator для автоматического обнаружения сервисов в Kubernetes посредством Service Discovery. Вот пример манифеста ServiceMonitor:
-
-```yaml
-apiVersion: monitoring.coreos.com/v1
-kind: ServiceMonitor
-metadata:
-name: scaletestapp-app-sm
-namespace: default
-labels:
-serviceMonitorSelector: prometheus
-spec:
-endpoints:
-- interval: 10s
-targetPort: 8080
-path: /metrics
-namespaceSelector:
-matchNames:
-- default
-selector:
-matchLabels:
-prometheus-monitored: "true"
-```
-
-* Требуемый сервис можно обнаружить посредством лейбла app или кастомного лейбла (например, prometheus-monitored), который вы можете отразить в манифесте Service.
-* ServiceMonitor можно применить как отдельный манифест или воспользоваться специальной секцией additionalServiceMonitors при настройке Prometheus Operator через Helm. Вот пример конфигурации Prometheus Operator:
-```yaml
-defaultRules:
-create: false
-alertmanager:
-enabled: false
-grafana:
-enabled: false
-kubeApiServer:
-enabled: false
-kubelet:
-enabled: false
-kubeControllerManager:
-enabled: false
-coreDns:
-enabled: false
-kubeEtcd:
-enabled: false
-kubeScheduler:
-enabled: false
-kubeStateMetrics:
-enabled: false
-nodeExporter:
-enabled: false
-prometheus:
-enabled: true
-additionalServiceMonitors:
-- name: app-sm
-namespace: default
-labels:
-serviceMonitorSelector: prometheus
-endpoints:
-- interval: 10s
-targetPort: 8080
-path: /metrics
-namespaceSelector:
-matchNames:
-- default
-selector:
-matchLabels:
-prometheus-monitored: "true"
-```
-
-* Когда примените конфигурацию, проверьте, что метрики из вашего приложения поступают в Prometheus. Зайдите в Prometheus Web UI, откройте раздел Graph или Targets, чтобы убедиться, что ваше приложение отображается и метрики доступны. Чтобы получить доступ к интерфейсу, нужно открыть доступ к серверу Prometheus с локальной машины. Например, с помощью команды:
-    
-  `minikube service <имя сервиса> --url`
-  
-* Сделайте скриншоты интерфейса с метриками и загрузите их в директорию Exc2.
-  
-* Теперь необходимо настроить Prometheus Adapter для использования метрик Prometheus в Horizontal Pod Autoscaler (HPA). Prometheus Adapter служит мостом между Kubernetes и Prometheus. Он позволяет Kubernetes использовать метрики Prometheus для масштабирования подов. Чтобы настроить Prometheus Adapter:
-  
-  * Когда используете Helm для установки или обновления Prometheus Adapter, предоставьте значения, которые переопределяют базовую конфигурацию. 
-  * Создайте файл values.yaml и включите туда определение для prometheus-adapter:
-    ```yaml
-    prometheus:
-    url: "http://<адрес_prometheus>"
-    rules:
-    default: false
-    custom:
-    - seriesQuery: 'http_requests_total{namespace!="",pod!=""}'
-    resources:
-    overrides:
-    namespace: {resource: "namespace"}
-    pod: {resource: "pod"}
-    name:
-    matches: "^http_requests_total"
-    as: "http_requests_per_second"
-    metricsQuery: 'sum(rate(http_requests_total{<<.LabelMatchers>>}[30s])) by (<<.GroupBy>>)'
+1. Запускаем minikube под М1 с помощью [stackoverflow](https://stackoverflow.com/questions/65397050/minikube-does-not-start-on-ubuntu-20-04-lts-exiting-due-to-guest-provision)
+2. Активируем metrics-server: `minikube addons enable metrics-server`
+3. Deployment: [link](deployment.yaml)
+4. Service: [link](service.yaml)
+5. HPA: [link](hpa.yaml)
+6. Применяем манифесты:
+   ```test
+    daracvetkova@192-168-1-120 Exc2 % kubectl apply -f deployment.yaml 
+    deployment.apps/test-deployment created
+    daracvetkova@192-168-1-120 Exc2 % kubectl get po
+    NAME                              READY   STATUS    RESTARTS   AGE
+    test-deployment-d8cfb8b48-kq6ql   1/1     Running   0          5s
+    daracvetkova@192-168-1-120 Exc2 % kubectl apply -f service.yaml
+    service/test-srv created
+    daracvetkova@192-168-1-120 Exc2 % kubectl get service
+    NAME         TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)    AGE
+    kubernetes   ClusterIP   10.96.0.1      <none>        443/TCP    20h
+    test-srv     ClusterIP   10.110.44.77   <none>        8080/TCP   11s
+    daracvetkova@192-168-1-120 Exc2 % kubectl apply -f hpa.yaml    
+    horizontalpodautoscaler.autoscaling/test-hpa created
+    daracvetkova@192-168-1-120 Exc2 % kubectl get hpa          
+    NAME       REFERENCE                    TARGETS         MINPODS   MAXPODS   REPLICAS   AGE
+    test-hpa   Deployment/test-deployment   <unknown>/80%   1         10        0          4s
+   ```
+7. Создали [locustfile](locustfile.py)
+8. Запустили:
+    ```text
+    daracvetkova@192-168-1-120 Exc2 % locust   
+    [2025-01-01 13:04:45,590] 192-168-1-120/INFO/locust.main: Starting Locust 2.32.5
+    [2025-01-01 13:04:45,590] 192-168-1-120/WARNING/locust.main: Python 3.9 support is deprecated and will be removed soon
+    [2025-01-01 13:04:45,894] 192-168-1-120/INFO/locust.main: Starting web interface at http://0.0.0.0:8089
     ```
-  * Установите Prometheus Adapter при помощи команды:
+   Скриншот:
+   ![](img/1.png)
 
-    `helm intall prometheus-adapter prometheus-community/prometheus-adapter -f values.yaml`
-
-  * Чтобы убедиться, что кастомная метрика http_requests_per_second стала доступной, воспользуйтесь командой:
-
-    `kubectl get --raw /apis/custom.metrics.k8s.io/v1beta1`
-
-  * Обновите манифест Horizontal Pod Autoscaler. Укажите там, что масштабирование нужно производить на базе новой метрики — http_requests_per_second. Вот пример манифеста:
-    ```yaml
-    apiVersion: autoscaling/v2
-    kind: HorizontalPodAutoscaler
-    metadata:
-    name: scaletestapp-hpa
-    spec:
-    scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: scaletestapp
-    minReplicas: 1
-    maxReplicas: 10
-    metrics:
-    - type: Pods
-    pods:
-    metric:
-    name: http_requests_per_second
-    target:
-    type: AverageValue
-    averageValue: 50
-    ```
-
-* Когда будете сдавать задание, загрузите новую версию манифеста в директорию Exc2.
-* Теперь надо убедиться, что всё работает как задумано. Для этого сгенерируйте нагрузку на приложение. Действуйте по аналогии с восьмым шагом в обязательной части задания.
-* Сделайте скриншоты дашборда или выгрузите логи, которые покажут, что количество реплик базы данных поменялось в ответ на сгенерированную нагрузку. Загрузите их в директорию Exc2 в рамках пул-реквеста.
+9. Запуск dashboard в k8s: `minikube dashboard`
+    ![](img/2.png)
+10. Указываем в locust данные service:
+    ![](img/3.png)
+11. Смотрим результаты в дашборде k8s:
+    ![](img/4.png)
