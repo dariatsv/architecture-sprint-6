@@ -1,0 +1,15 @@
+kind: Service
+apiVersion: v1
+metadata:
+  name: test-deployment
+  labels:
+    app: test
+spec:
+  ports:
+    - protocol: TCP
+      port: 8080
+      targetPort: 8080
+      nodePort: 30865
+  selector:
+    app: test
+  type: NodePort
